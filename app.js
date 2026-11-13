@@ -1,23 +1,34 @@
-/* Yanobeam — map logic */
+/* firwarn — live road reports for BeamNG East Coast
+   map engine + crosshair + shared live feed (MantleDB) */
+
 (function () {
 'use strict';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
 const wrap = $('#mapWrap'), layer = $('#mapLayer'), img = $('#mapImg');
-const markersEl = $('#markers'), pinEl = $('#pin'), youEl = $('#you');
-const popup = $('#popup'), sheet = $('#sheet'), banner = $('#banner');
-const confirmBar = $('#confirm'), fab = $('#fab'), sendBtn = $('#send');
+const markersEl = $('#markers'), crossEl = $('#cross'), popup = $('#popup');
+const sheet = $('#sheet'), banner = $('#banner'), confirmBar = $('#confirm');
+const fab = $('#fab'), sendBtn = $('#send');
 
-const KEY = 'yanobeam.reports.v1';
-const TYPES = {
-  crash:      { label: 'Car crash',       icon: '#ic-crash',  color: '#E8352B' },
-  stopped:    { label: 'Stopped car',     icon: '#ic-stopped',color: '#F59E0B', tri: true },
-  police:     { label: 'Police control',  icon: '#ic-police', color: '#2F6FED' },
-  undercover: { label: 'Undercover',      icon: '#ic-uc',     color: '#8A9099' }
+/* ---------- config ---------- */
+const LS = {
+  names: 'firwarn.names.v1',
+  cur: 'firwarn.username.v1',
+  cache: 'firwarn.cache.v1'
 };
-const BRANDS = { ETK: 'ETK', BRKL: 'Bruckell', GVRL: 'Gavril', OTHERS: 'Others' };
-const YOU = { fx: 0.545, fy: 0.135 };
+const API = 'https://mantledb.sh/v2/firwarn-live/state';
+const POLL_FAST = 9000;    // right after activity
+const POLL_SLOW = 30000;   // idle
+const REPORT_TTL = 24 * 3600 * 1000;
+
+const TYPES = {
+  crash:    { label: 'Car crash',      img: 'icons/crash.png',   bg: '#FDECEA' },
+  stopped:  { label: 'Stopped car',    img: 'icons/stopped.png', bg: '#FFF6E5' },
+  police:   { label: 'Police control', img: 'icons/police.png',  bg: '#EAF1FE' },
+  unmarked: { label: 'Unmarked',       gray: true }
+};
+const BRANDS = { ETK: 'ETK', GVRL: 'Gavril', BRKL: 'Bruckell', OTHR: 'Other' };
 const PLACES = [
   { n: 'Firwood town center', fx: .57, fy: .10 }, { n: 'Main Street', fx: .54, fy: .13 },
   { n: 'Harbor', fx: .87, fy: .57 },            { n: 'Sawmill', fx: .20, fy: .30 },
@@ -26,46 +37,29 @@ const PLACES = [
   { n: 'Haunted house', fx: .78, fy: .33 },      { n: 'River bridge', fx: .45, fy: .85 }
 ];
 
+/* ---------- state ---------- */
 let WORLD = { w: 0, h: 0 }, fit = 1, minS = 1, maxS = 1;
 let view = { x: 0, y: 0, s: 1 };
-let mode = 'idle';           // idle | pinning | confirming | reporting
-let pin = null;              // {x,y} world px
-let sel = null;              // {type, brand?}
+let mode = 'idle';              // idle | pinning | confirming | reporting
+let cross = null;               // {x,y} world px — moves ONLY on map click
+let sel = null;                 // {type, brand?}
 let tab = 'warnings';
-let reports = [], points = 0, hintShown = false;
-let popupWorld = null, popupId = null, tween = null;
-
-/* ---------- storage ---------- */
-function load() {
-  try {
-    const j = JSON.parse(localStorage.getItem(KEY));
-    if (j && Array.isArray(j.reports)) { reports = j.reports; points = j.points | 0; hintShown = !!j.hint; return true; }
-  } catch (e) {}
-  return false;
-}
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify({ reports, points, hint: hintShown })); } catch (e) {}
-}
-function seed() {
-  const now = Date.now(), m = 60000;
-  reports = [
-    { id: 's1', fx: .56, fy: .12, type: 'police', t: now - 8 * m, confirms: 2, mine: false },
-    { id: 's2', fx: .09, fy: .62, type: 'crash', t: now - 4 * m, confirms: 0, mine: false },
-    { id: 's3', fx: .83, fy: .56, type: 'stopped', t: now - 16 * m, confirms: 1, mine: false },
-    { id: 's4', fx: .35, fy: .06, type: 'undercover', brand: 'GVRL', t: now - 22 * m, confirms: 0, mine: false },
-    { id: 's5', fx: .50, fy: .80, type: 'police', t: now - 12 * m, confirms: 0, mine: false }
-  ];
-}
+let reports = [];               // shared live reports
+let username = null;
+let popupId = null, popupWorld = null, tween = null;
+let pollTimer = null, fastUntil = 0, writing = false;
 
 /* ---------- helpers ---------- */
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
 function title(r) {
   const t = TYPES[r.type] || TYPES.crash;
-  return r.type === 'undercover' ? 'Undercover · ' + (BRANDS[r.brand] || 'Others') : t.label;
+  return r.type === 'unmarked' ? 'Unmarked · ' + (BRANDS[r.brand] || 'Other') : t.label;
 }
 function age(t) {
   const s = Math.max(0, (Date.now() - t) / 1000);
-  if (s < 50) return 'just now';
+  if (s < 45) return 'just now';
   if (s < 3600) return Math.round(s / 60) + ' min ago';
   if (s < 86400) return Math.round(s / 3600) + ' h ago';
   return Math.round(s / 86400) + ' d ago';
@@ -78,15 +72,91 @@ function coords(w) {
 function toast(msg) {
   const el = document.createElement('div');
   el.className = 'toast'; el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.classList.add('out'), 2400);
-  setTimeout(() => el.remove(), 2750);
+  $('#toastWrap').appendChild(el);
+  setTimeout(() => el.classList.add('out'), 2300);
+  setTimeout(() => el.remove(), 2650);
 }
+function badgeHTML(r, size) {
+  const t = TYPES[r.type] || TYPES.crash;
+  if (t.gray) {
+    const inner = r.brand === 'OTHR'
+      ? '<svg viewBox="0 0 48 48"><use href="#ic-darkcar"/></svg>'
+      : '<b>' + (r.brand || 'OTHR') + '</b>';
+    return '<span class="mk gray"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '>' + inner + '</span>';
+  }
+  return '<span class="mk" style="background:' + t.bg + '"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '>' +
+    '<img src="' + t.img + '" alt=""></span>';
+}
+
+/* ---------- username ---------- */
+function loadNames() {
+  try { return JSON.parse(localStorage.getItem(LS.names)) || []; } catch (e) { return []; }
+}
+function saveName(n) {
+  const list = loadNames().filter(x => x.toLowerCase() !== n.toLowerCase());
+  list.unshift(n);
+  try { localStorage.setItem(LS.names, JSON.stringify(list.slice(0, 8))); } catch (e) {}
+}
+function showUserChip() {
+  $('#uname').textContent = username;
+  $('#uav').textContent = username.slice(0, 1).toUpperCase();
+}
+function openNameModal() {
+  const prev = loadNames();
+  const box = $('#prevNames');
+  if (prev.length) {
+    box.hidden = false;
+    box.innerHTML = '<div style="flex-basis:100%;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#666E78;margin-bottom:2px">your last username' + (prev.length > 1 ? 's' : '') + '</div>' +
+      prev.map(n => '<button data-n="' + n.replace(/"/g, '&quot;') + '">' + n + '</button>').join('');
+  } else box.hidden = true;
+  $('#nameModal').hidden = false;
+  setTimeout(() => $('#nameIn').focus(), 60);
+}
+function setUserName(n) {
+  username = n;
+  try { localStorage.setItem(LS.cur, n); } catch (e) {}
+  saveName(n);
+  showUserChip();
+  $('#nameModal').hidden = true;
+  toast('hey ' + n + ' — you\'re all set');
+}
+$('#prevNames').addEventListener('click', e => {
+  const b = e.target.closest('button[data-n]'); if (b) setUserName(b.dataset.n);
+});
+$('#nameGo').onclick = () => {
+  const v = $('#nameIn').value.trim().replace(/\s+/g, ' ').slice(0, 16);
+  if (v.length < 2) { $('#nameIn').focus(); toast('at least 2 characters'); return; }
+  setUserName(v);
+};
+$('#nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#nameGo').click(); });
+
+/* username menu in top bar */
+$('#userChip').onclick = e => {
+  e.stopPropagation();
+  const m = $('#userMenu');
+  if (!m.hidden) { m.hidden = true; return; }
+  const prev = loadNames().filter(n => n !== username);
+  m.innerHTML = '<div class="umT">signed in as</div>' +
+    '<button class="cur"><span class="uav">' + username.slice(0, 1).toUpperCase() + '</span>' + username + '</button>' +
+    (prev.length ? '<div class="umT">switch</div>' + prev.map(n =>
+      '<button data-n="' + n.replace(/"/g, '&quot;') + '"><span class="uav" style="background:#8A9099">' + n.slice(0, 1).toUpperCase() + '</span>' + n + '</button>').join('') : '') +
+    '<button class="umNew" data-new="1">+ use a different name</button>';
+  m.hidden = false;
+};
+$('#userMenu').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $('#userMenu').hidden = true;
+  if (b.dataset.new) { openNameModal(); return; }
+  if (b.dataset.n) { setUserName(b.dataset.n); }
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#userMenu') && !e.target.closest('#userChip')) $('#userMenu').hidden = true;
+});
 
 /* ---------- view ---------- */
 function fitView() {
   fit = Math.min(wrap.clientWidth / WORLD.w, wrap.clientHeight / WORLD.h);
-  minS = fit * 0.92; maxS = fit * 9;
+  minS = fit * 0.9; maxS = fit * 11;                 // nice deep zoom
   view.s = fit;
   view.x = (wrap.clientWidth - WORLD.w * fit) / 2;
   view.y = (wrap.clientHeight - WORLD.h * fit) / 2;
@@ -94,7 +164,6 @@ function fitView() {
 function apply() {
   layer.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.s + ')';
   layer.style.setProperty('--inv', 1 / view.s);
-  updateScale();
   if (popupWorld) positionPopup();
 }
 function toWorld(cx, cy) {
@@ -110,10 +179,10 @@ function zoomAt(sx, sy, ns) {
 }
 function flyTo(fx, fy) {
   const w = { x: fx * WORLD.w, y: fy * WORLD.h };
-  const ts = clamp(Math.max(view.s, fit * 2.6), minS, maxS);
+  const ts = clamp(Math.max(view.s, fit * 2.8), minS, maxS);
   const r = wrap.getBoundingClientRect();
   tween = {
-    t0: performance.now(), dur: 550,
+    t0: performance.now(), dur: 560,
     from: { x: view.x, y: view.y, s: view.s },
     to: { x: r.width / 2 - w.x * ts, y: r.height / 2 - w.y * ts, s: ts }
   };
@@ -129,33 +198,18 @@ function step(now) {
   apply();
   if (p < 1) requestAnimationFrame(step); else tween = null;
 }
-function updateScale() {
-  if (!WORLD.w) return;
-  const mPerPx = 2048 / (WORLD.w * view.s);   // map is 2.048 km across
-  const opts = [25, 50, 100, 200, 500, 1000, 2000];
-  let m = opts[0];
-  for (const o of opts) if (o / mPerPx <= 72) m = o;
-  $('#sBar').style.width = Math.round(m / mPerPx) + 'px';
-  $('#sTxt').textContent = m >= 1000 ? (m / 1000) + ' km' : m + ' m';
-}
 
 /* ---------- image ---------- */
 function onImgOk() {
   WORLD = { w: img.naturalWidth || 1600, h: img.naturalHeight || 1600 };
   fitView(); apply(); render(); updateFoot();
-  youEl.style.left = (YOU.fx * WORLD.w) + 'px';
-  youEl.style.top = (YOU.fy * WORLD.h) + 'px';
-  if (!hintShown) {
-    hintShown = true; save();
-    setTimeout(() => toast('Tip: tap the red button to drop a pin'), 900);
-  }
+  if (!cross) setCross({ x: WORLD.w / 2, y: WORLD.h / 2 }, false);
 }
 function onImgErr() {
-  if (!img.dataset.tried) { img.dataset.tried = '1'; img.src = 'map.jpg'; return; }
   if (!img.dataset.ph) {
     img.dataset.ph = '1';
     img.src = placeholder();
-    toast('map.png not found — showing placeholder');
+    toast('map.png missing — showing placeholder');
   }
 }
 function placeholder() {
@@ -168,82 +222,231 @@ function placeholder() {
   g.fillStyle = '#A8CBE8';
   g.fillRect(1420, 0, 180, 1600); g.fillRect(0, 1340, 1600, 260);
   g.strokeStyle = '#F5C96B'; g.lineWidth = 26; g.lineCap = 'round'; g.lineJoin = 'round';
-  g.beginPath(); g.moveTo(140, 140); g.lineTo(1460, 140); g.lineTo(1460, 1460); g.lineTo(140, 1460); g.closePath(); g.stroke();
+  g.beginPath(); g.moveTo(140,140); g.lineTo(1460,140); g.lineTo(1460,1460); g.lineTo(140,1460); g.closePath(); g.stroke();
   g.strokeStyle = '#fff'; g.lineWidth = 14;
-  g.beginPath(); g.moveTo(800, 60); g.lineTo(700, 900); g.lineTo(400, 1400); g.stroke();
-  g.beginPath(); g.moveTo(140, 700); g.lineTo(1400, 620); g.stroke();
-  g.beginPath(); g.moveTo(300, 1460); g.lineTo(500, 900); g.lineTo(1420, 1000); g.stroke();
-  g.fillStyle = '#D8DBDF'; g.fillRect(640, 90, 420, 260);
+  g.beginPath(); g.moveTo(800,60); g.lineTo(700,900); g.lineTo(400,1400); g.stroke();
+  g.beginPath(); g.moveTo(140,700); g.lineTo(1400,620); g.stroke();
+  g.beginPath(); g.moveTo(300,1460); g.lineTo(500,900); g.lineTo(1420,1000); g.stroke();
   return c.toDataURL('image/png');
+}
+
+/* ---------- live feed (MantleDB) ---------- */
+function sanitize(list) {
+  if (!Array.isArray(list)) return [];
+  const now = Date.now();
+  return list.filter(r => r && typeof r === 'object' && r.id && r.type && TYPES[r.type] && (now - r.t) < REPORT_TTL)
+    .map(r => ({
+      id: String(r.id).slice(0, 20),
+      fx: clamp(+r.fx || 0, 0, 1), fy: clamp(+r.fy || 0, 0, 1),
+      type: r.type, brand: r.brand ? String(r.brand).slice(0, 8) : undefined,
+      by: String(r.by || '?').slice(0, 16),
+      t: +r.t || now,
+      yes: Array.isArray(r.yes) ? [...new Set(r.yes.map(String))].slice(0, 200) : [],
+      no: Array.isArray(r.no) ? [...new Set(r.no.map(String))].slice(0, 200) : []
+    }));
+}
+function cacheWrite() {
+  try { localStorage.setItem(LS.cache, JSON.stringify(reports.slice(0, 80))); } catch (e) {}
+}
+function cacheRead() {
+  try {
+    const c = JSON.parse(localStorage.getItem(LS.cache));
+    if (Array.isArray(c)) { reports = sanitize(c); render(); renderFeed(); updateFoot(); }
+  } catch (e) {}
+}
+function setLive(state) {
+  const p = $('#live');
+  p.classList.remove('on', 'off');
+  if (state === 'on') { p.classList.add('on'); $('#liveTxt').textContent = 'live'; }
+  else if (state === 'off') { p.classList.add('off'); $('#liveTxt').textContent = 'offline'; }
+  else $('#liveTxt').textContent = 'connecting…';
+}
+async function pull() {
+  try {
+    const r = await fetch(API + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const incoming = sanitize(d.reports);
+    // merge: keep newest per id, add anything we haven't seen
+    const map = new Map(reports.map(x => [x.id, x]));
+    for (const inc of incoming) {
+      const mine = map.get(inc.id);
+      if (!mine) map.set(inc.id, inc);
+      else map.set(inc.id, { ...mine, ...inc, yes: [...new Set([...mine.yes, ...inc.yes])], no: [...new Set([...mine.no, ...inc.no])] });
+    }
+    // drop reports the server no longer has (someone pruned them)
+    const serverIds = new Set(incoming.map(x => x.id));
+    for (const id of [...map.keys()]) if (!serverIds.has(id) && Date.now() - map.get(id).t > 120000 && !map.get(id)._mine) map.delete(id);
+    reports = [...map.values()].sort((a, b) => b.t - a.t);
+    cacheWrite(); render(); renderFeed(); updateFoot();
+    setLive('on');
+    return true;
+  } catch (e) {
+    setLive('off');
+    return false;
+  }
+}
+async function push(mutate) {
+  if (writing) return false;
+  writing = true;
+  try {
+    const r = await fetch(API, { cache: 'no-store' });
+    let server = [];
+    if (r.ok) { const d = await r.json(); server = sanitize(d.reports); }
+    // merge server + local, then apply the mutation
+    const map = new Map(server.map(x => [x.id, x]));
+    for (const loc of reports) {
+      const s = map.get(loc.id);
+      if (!s) map.set(loc.id, loc);
+      else map.set(loc.id, { ...s, ...loc, yes: [...new Set([...s.yes, ...loc.yes])], no: [...new Set([...s.no, ...loc.no])] });
+    }
+    let next = [...map.values()];
+    next = mutate(next) || next;
+    next = sanitize(next).sort((a, b) => b.t - a.t).slice(0, 60);
+    const w = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reports: next, updated: Date.now() })
+    });
+    if (!w.ok) throw new Error(w.status);
+    reports = next;
+    cacheWrite(); render(); renderFeed(); updateFoot();
+    bumpFast();
+    setLive('on');
+    return true;
+  } catch (e) {
+    setLive('off');
+    toast('couldn\'t reach the feed — saved locally');
+    return false;
+  } finally { writing = false; }
+}
+function bumpFast() { fastUntil = Date.now() + 45000; schedulePoll(1200); }
+function schedulePoll(delay) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => {
+    if (!document.hidden) await pull();
+    schedulePoll(Date.now() < fastUntil ? POLL_FAST : POLL_SLOW);
+  }, delay);
 }
 
 /* ---------- markers ---------- */
 function markerHTML(r) {
-  const t = TYPES[r.type] || TYPES.crash;
   const x = r.fx * WORLD.w, y = r.fy * WORLD.h;
-  const badge = t.tri
-    ? '<span class="badge tri"><svg viewBox="0 0 48 48"><use href="' + t.icon + '"/></svg></span>'
-    : '<span class="badge" style="background:' + t.color + '"><svg viewBox="0 0 48 48"><use href="' + t.icon + '"/></svg></span>';
+  const yes = r.yes.length, no = r.no.length;
+  const badge = badgeHTML(r);
+  let cnt = '';
+  if (yes) cnt = '<span class="cnt">' + yes + '</span>';
+  else if (no) cnt = '<span class="cnt no">' + no + '</span>';
   return '<div class="marker" data-id="' + r.id + '" style="left:' + x + 'px;top:' + y + 'px" ' +
-    'role="button" aria-label="' + title(r) + '">' + badge +
-    (r.confirms ? '<span class="cnt">' + r.confirms + '</span>' : '') + '</div>';
+    'role="button" aria-label="' + title(r) + '">' + badge + cnt +
+    '<span class="ttl">' + title(r) + ' · ' + age(r.t) + '</span></div>';
 }
-function render() { markersEl.innerHTML = reports.map(markerHTML).join(''); }
+function render() { if (WORLD.w) markersEl.innerHTML = reports.map(markerHTML).join(''); }
 function updateFoot() {
-  let near = 0;
-  for (const r of reports) {
-    const dx = r.fx - YOU.fx, dy = r.fy - YOU.fy;
-    if (dx * dx + dy * dy < 0.0144) near++;
+  const near = cross ? reports.filter(r => Math.hypot(r.fx - cross.x / WORLD.w, r.fy - cross.y / WORLD.h) < 0.12).length : 0;
+  $('#footL').textContent = 'Firwood, Maine · ' + reports.length + ' live report' + (reports.length === 1 ? '' : 's') +
+    (near ? ' · ' + near + ' near your crosshair' : '');
+  $('#feedN').textContent = reports.length;
+}
+
+/* ---------- feed panel ---------- */
+function renderFeed() {
+  const list = $('#feedList');
+  if (!reports.length) {
+    list.innerHTML = '<div class="fEmpty">nothing reported yet.<br>be the first — hit the red button.</div>';
+    return;
   }
-  $('#footL').textContent = 'Firwood, Maine · ' + near + ' report' + (near === 1 ? '' : 's') + ' nearby';
-  $('#footR').hidden = points < 1;
-  $('#pts').textContent = points;
+  list.innerHTML = reports.map(r => {
+    const yesOn = username && r.yes.includes(username);
+    const noOn = username && r.no.includes(username);
+    return '<div class="fItem" data-id="' + r.id + '">' + badgeHTML(r, 32) +
+      '<div class="fMeta"><b>' + title(r) + '</b><small>' + r.by + ' · ' + age(r.t) + '</small></div>' +
+      '<div class="fVotes">' +
+      '<button class="vBtn yes' + (yesOn ? ' on' : '') + '" data-v="yes" title="accept"><svg><use href="#ic-check"/></svg>' + r.yes.length + '</button>' +
+      '<button class="vBtn no' + (noOn ? ' on' : '') + '" data-v="no" title="not there"><svg><use href="#ic-no"/></svg>' + r.no.length + '</button>' +
+      '</div></div>';
+  }).join('');
+}
+$('#feedBtn').onclick = () => {
+  const f = $('#feed');
+  f.hidden = !f.hidden;
+  if (!f.hidden) renderFeed();
+};
+$('#feedX').onclick = () => { $('#feed').hidden = true; };
+$('#feedList').addEventListener('click', e => {
+  const b = e.target.closest('.vBtn'); if (!b) return;
+  vote(b.closest('.fItem').dataset.id, b.dataset.v);
+});
+async function vote(id, side) {
+  if (!username) { openNameModal(); return; }
+  const r = reports.find(x => x.id === id); if (!r) return;
+  const other = side === 'yes' ? 'no' : 'yes';
+  const had = r[side].includes(username);
+  // optimistic
+  r[side] = had ? r[side].filter(n => n !== username) : [...r[side], username];
+  r[other] = r[other].filter(n => n !== username);
+  render(); renderFeed();
+  if (popupId === id) openPopup(id);
+  const ok = await push(() => {});
+  if (ok && !had) toast(side === 'yes' ? 'accepted — ' + r.by + ' sees your check' : 'marked as not there');
 }
 
 /* ---------- popup ---------- */
 function openPopup(id) {
   const r = reports.find(x => x.id === id); if (!r) return;
   popupId = id; popupWorld = { x: r.fx * WORLD.w, y: r.fy * WORLD.h };
-  const t = TYPES[r.type] || TYPES.crash;
-  const badge = t.tri
-    ? '<span class="badge tri"><svg viewBox="0 0 48 48"><use href="' + t.icon + '"/></svg></span>'
-    : '<span class="badge" style="background:' + t.color + '"><svg viewBox="0 0 48 48"><use href="' + t.icon + '"/></svg></span>';
+  const yesOn = username && r.yes.includes(username);
+  const noOn = username && r.no.includes(username);
+  const mine = r.by === username;
   popup.innerHTML =
-    '<div class="pHead">' + badge + '<div><b>' + title(r) + '</b><small>reported ' + age(r.t) + '</small></div></div>' +
-    (r.confirms ? '<div class="pMeta">' + r.confirms + ' driver' + (r.confirms === 1 ? '' : 's') + ' confirmed this</div>' : '') +
-    '<div class="pActs"><button data-act="still">Still there</button>' +
-    (r.mine ? '<button class="danger" data-act="remove">Remove</button>' : '') + '</div>';
+    '<div class="pHead">' + badgeHTML(r, 38) + '<div><b>' + title(r) + '</b><small>' + r.by + ' · ' + age(r.t) + '</small></div></div>' +
+    '<div class="pMeta">' +
+    (r.yes.length || r.no.length
+      ? '✓ ' + r.yes.length + ' accept' + (r.yes.length === 1 ? 's' : '') + ' · ✗ ' + r.no.length + ' say' + (r.no.length === 1 ? 's' : '') + ' no'
+      : 'no one has checked this yet') + '</div>' +
+    '<div class="pActs">' +
+    '<button class="yes' + (yesOn ? ' on' : '') + '" data-v="yes"><svg><use href="#ic-check"/></svg>Accept ' + (r.yes.length || '') + '</button>' +
+    '<button class="no' + (noOn ? ' on' : '') + '" data-v="no"><svg><use href="#ic-no"/></svg>Not ' + (r.no.length || '') + '</button>' +
+    (mine ? '<button class="danger" data-act="remove">delete</button>' : '') +
+    '</div>';
   popup.hidden = false;
   positionPopup();
 }
 function positionPopup() {
   const s = screenOf(popupWorld), r = wrap.getBoundingClientRect();
-  popup.style.left = clamp(s.x, 140, r.width - 140) + 'px';
-  popup.style.top = Math.max(s.y, 150) + 'px';
+  popup.style.left = clamp(s.x, 150, r.width - 150) + 'px';
+  popup.style.top = Math.max(s.y, 160) + 'px';
 }
 function closePopup() { popup.hidden = true; popupId = null; popupWorld = null; }
 popup.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || !popupId) return;
-  const r = reports.find(x => x.id === popupId); if (!r) return;
-  if (b.dataset.act === 'still') { r.confirms = (r.confirms | 0) + 1; save(); render(); openPopup(r.id); toast('Confirmed — thanks!'); }
-  if (b.dataset.act === 'remove') { reports = reports.filter(x => x.id !== r.id); save(); render(); closePopup(); updateFoot(); toast('Report removed'); }
+  if (b.dataset.v) { vote(popupId, b.dataset.v); return; }
+  if (b.dataset.act === 'remove') {
+    const id = popupId;
+    push(list => list.filter(x => x.id !== id));
+    closePopup();
+    toast('report deleted');
+  }
 });
 
-/* ---------- pin / modes ---------- */
-function setPin(w) {
-  pin = { x: clamp(w.x, 0, WORLD.w), y: clamp(w.y, 0, WORLD.h) };
-  pinEl.hidden = false;
-  pinEl.style.left = pin.x + 'px'; pinEl.style.top = pin.y + 'px';
-  pinEl.querySelector('svg').style.animation = 'none';
-  void pinEl.offsetWidth;
-  pinEl.querySelector('svg').style.animation = '';
-  $('#posTxt').textContent = coords(pin);
-  $('#posTxt2').textContent = coords(pin);
+/* ---------- crosshair + modes ---------- */
+function setCross(w, animate) {
+  cross = { x: clamp(w.x, 0, WORLD.w), y: clamp(w.y, 0, WORLD.h) };
+  crossEl.hidden = false;
+  crossEl.style.left = cross.x + 'px';
+  crossEl.style.top = cross.y + 'px';
+  if (animate) {
+    crossEl.classList.remove('bump'); void crossEl.offsetWidth; crossEl.classList.add('bump');
+  }
+  $('#posTxt').textContent = coords(cross);
+  $('#posTxt2').textContent = coords(cross);
+  updateFoot();
 }
 function toIdle() {
-  mode = 'idle'; pin = null; pinEl.hidden = true;
+  mode = 'idle';
   confirmBar.hidden = true; banner.hidden = true;
   document.body.classList.remove('pinning', 'confirming', 'sheetopen');
+  sheet.classList.remove('open');
   fab.querySelector('.bang').hidden = false; fab.querySelector('.xIco').hidden = true;
 }
 function startPinning() {
@@ -253,73 +456,73 @@ function startPinning() {
 }
 function handleMapClick(cx, cy) {
   closePopup();
-  if (mode !== 'pinning' && mode !== 'confirming') return;
-  setPin(toWorld(cx, cy));
+  if (mode === 'reporting') return;
+  setCross(toWorld(cx, cy), true);       // crosshair moves ONLY here
   mode = 'confirming';
   document.body.classList.add('confirming');
   confirmBar.hidden = false;
+  banner.hidden = true;
 }
 
 /* ---------- sheet ---------- */
 function openSheet() {
   mode = 'reporting';
-  document.body.classList.remove('confirming');
+  document.body.classList.remove('confirming', 'pinning');
   document.body.classList.add('sheetopen');
-  confirmBar.hidden = true;
+  confirmBar.hidden = true; banner.hidden = true;
+  fab.querySelector('.bang').hidden = false; fab.querySelector('.xIco').hidden = true;
   setTab(tab);
   sheet.classList.add('open');
 }
-function closeSheet() { sheet.classList.remove('open'); }
 function setTab(t) {
   tab = t;
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.pane').forEach(p => p.hidden = p.dataset.pane !== t);
 }
 function markSel(el) {
-  $$('.opt.sel,.flat.sel').forEach(x => x.classList.remove('sel'));
+  $$('.opt.sel').forEach(x => x.classList.remove('sel'));
   el.classList.add('sel');
   sendBtn.disabled = false;
 }
 $$('.tab').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 $$('.opt').forEach(b => b.onclick = () => {
-  if (b.dataset.type === 'undercover') {
-    $('#policeOpts').hidden = true; $('#brandPick').hidden = false; return;
-  }
-  sel = { type: b.dataset.type };
+  sel = { type: b.dataset.type, brand: b.dataset.brand };
   markSel(b);
 });
-$$('.flat[data-brand]').forEach(b => b.onclick = () => {
-  sel = { type: 'undercover', brand: b.dataset.brand };
-  markSel(b);
-});
-$('#brandBack').onclick = () => {
-  $('#brandPick').hidden = true; $('#policeOpts').hidden = false;
-};
-sendBtn.onclick = () => {
-  if (!sel || !pin) return;
+sendBtn.onclick = async () => {
+  if (!sel || !cross) return;
+  if (!username) { openNameModal(); return; }
+  sendBtn.disabled = true;
   const r = {
-    id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-    fx: pin.x / WORLD.w, fy: pin.y / WORLD.h,
-    type: sel.type, brand: sel.brand, t: Date.now(), confirms: 0, mine: true
+    id: uid(),
+    fx: cross.x / WORLD.w, fy: cross.y / WORLD.h,
+    type: sel.type, brand: sel.brand,
+    by: username, t: Date.now(),
+    yes: [], no: []
   };
-  reports.push(r); points++; save();
-  render(); updateFoot();
+  reports = [r, ...reports];
+  const ok = await push(() => {});
   const el = markersEl.querySelector('[data-id="' + r.id + '"]');
   if (el) el.classList.add('pop');
   closeSheet(); toIdle();
-  toast(title(r) + ' sent — nice one!');
+  toast(ok ? title(r) + ' is live — everyone sees it' : title(r) + ' queued for when you\'re back online');
+  sel = null;
+  $$('.opt.sel').forEach(x => x.classList.remove('sel'));
+  sendBtn.disabled = true;
 };
+function closeSheet() { sheet.classList.remove('open'); }
 $('#sClose').onclick = () => { closeSheet(); toIdle(); };
 
 /* ---------- chrome events ---------- */
-fab.onclick = () => { if (mode === 'idle') startPinning(); else { closeSheet(); toIdle(); } };
-$('#bannerX').onclick = () => { closeSheet(); toIdle(); };
+fab.onclick = () => {
+  if (mode === 'idle') startPinning();
+  else { closeSheet(); toIdle(); }
+};
+$('#bannerX').onclick = () => toIdle();
 $('#cCancel').onclick = () => toIdle();
 $('#cOk').onclick = () => openSheet();
-
-$('#zin').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, view.s * 1.4);
-$('#zout').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, view.s / 1.4);
-$('#loc').onclick = () => flyTo(YOU.fx, YOU.fy);
+$('#zin').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, view.s * 1.45);
+$('#zout').onclick = () => zoomAt(wrap.clientWidth / 2, wrap.clientHeight / 2, view.s / 1.45);
 
 markersEl.addEventListener('click', e => {
   const m = e.target.closest('.marker'); if (!m) return;
@@ -394,28 +597,29 @@ function showResults() {
   const list = PLACES.filter(p => !v || p.n.toLowerCase().includes(v)).slice(0, 6);
   results.innerHTML = list.length
     ? list.map(p => '<button data-fx="' + p.fx + '" data-fy="' + p.fy + '">' + p.n + '</button>').join('')
-    : '<div class="none">No places found</div>';
+    : '<div class="none">no places found</div>';
   results.hidden = false;
 }
-function hideResults() { results.hidden = true; }
 q.addEventListener('focus', showResults);
 q.addEventListener('input', showResults);
-q.addEventListener('blur', () => setTimeout(hideResults, 150));
+q.addEventListener('blur', () => setTimeout(() => { results.hidden = true; }, 150));
 q.addEventListener('keydown', e => {
   if (e.key === 'Enter') { const b = results.querySelector('button'); if (b) b.click(); }
-  if (e.key === 'Escape') { q.blur(); hideResults(); }
+  if (e.key === 'Escape') { q.blur(); results.hidden = true; }
 });
 results.addEventListener('mousedown', e => e.preventDefault());
 results.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   flyTo(parseFloat(b.dataset.fx), parseFloat(b.dataset.fy));
-  q.value = ''; hideResults();
+  q.value = ''; results.hidden = true;
 });
 
 /* ---------- keyboard ---------- */
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    if (!$('#nameModal').hidden) return;
     if (sheet.classList.contains('open')) { closeSheet(); toIdle(); }
+    else if (!$('#feed').hidden) $('#feed').hidden = true;
     else if (!popup.hidden) closePopup();
     else if (mode !== 'idle') toIdle();
   }
@@ -425,18 +629,19 @@ window.addEventListener('keydown', e => {
 
 /* ---------- misc ---------- */
 window.addEventListener('resize', () => { if (WORLD.w) { fitView(); apply(); } });
-
-let online = 287;
-setInterval(() => {
-  online = clamp(online + Math.round(Math.random() * 7 - 3), 180, 560);
-  $('#onlineN').textContent = online;
-}, 4000);
-
-setInterval(() => { if (popupId) openPopup(popupId); }, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { pull(); schedulePoll(1500); }
+});
+setInterval(() => { if (popupId) openPopup(popupId); if (!$('#feed').hidden) renderFeed(); }, 45000);
 
 /* ---------- boot ---------- */
-if (!load()) { seed(); save(); }
+try { username = localStorage.getItem(LS.cur); } catch (e) {}
+if (username) showUserChip(); else openNameModal();
+
+cacheRead();                       // show last-known reports instantly
 img.addEventListener('load', onImgOk);
 img.addEventListener('error', onImgErr);
 if (img.complete) { if (img.naturalWidth) onImgOk(); else onImgErr(); }
+
+pull().then(() => schedulePoll(POLL_SLOW));
 })();
