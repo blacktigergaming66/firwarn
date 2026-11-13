@@ -528,6 +528,14 @@ markersEl.addEventListener('click', e => {
   const m = e.target.closest('.marker'); if (!m) return;
   openPopup(m.dataset.id);
 });
+// double-tap an icon → open it (accept / decline / counts) and don't zoom the map
+markersEl.addEventListener('dblclick', e => {
+  const m = e.target.closest('.marker'); if (!m) return;
+  e.stopPropagation();
+  openPopup(m.dataset.id);
+  const p = popup.querySelector('.pActs');
+  if (p) p.classList.add('flash');
+});
 
 /* ---------- pan / pinch / click ---------- */
 const pts = new Map();

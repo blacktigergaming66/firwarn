@@ -317,6 +317,8 @@ body.confirming #fab,body.sheetopen #fab{opacity:0;pointer-events:none;transform
 .pActs .yes.on{background:#EDFBF1;border-color:#A9E9C1;color:#177A3B}
 .pActs .no.on{background:#FFF1F0;border-color:#FFC9C3;color:#B4301F}
 .pActs .danger{color:var(--red2);border-color:#FFD9D6;background:#FFF7F6}
+.pActs.flash{animation:flash .45s ease}
+@keyframes flash{0%{transform:scale(.94);opacity:.4}100%{transform:scale(1);opacity:1}}
 
 /* ---------- username modal ---------- */
 #nameModal{
