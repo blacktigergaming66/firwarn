@@ -54,6 +54,32 @@
       <circle cx="14" cy="36" r="4"/><circle cx="34" cy="36" r="4"/>
     </g>
   </symbol>
+  <symbol id="ic-race" viewBox="0 0 24 24">
+    <path d="M4.5 3v18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M6.5 4.4h13l-2.6 4 2.6 4h-13Z" fill="currentColor"/>
+    <path d="M9.2 4.4v8M12 4.4v8M14.7 4.4v8M6.5 8.4h13" stroke="#fff" stroke-width="1.1" opacity=".85"/>
+  </symbol>
+  <symbol id="ic-closed" viewBox="0 0 24 24">
+    <rect x="2.5" y="7.5" width="19" height="8" rx="2.4" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M8 8.5l-3 6M13 8.5l-3 6M18 8.5l-3 6M23 8.5l-3 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M5 16v4M19 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="ic-drift" viewBox="0 0 24 24">
+    <path d="M2.5 20.5c5.5 0 6.5-4 9.5-4s4.5 2 9.5 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M2.5 15c5.5 0 6.5-6.5 9.5-6.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" opacity=".45"/>
+    <path d="M14.5 3.5l4 2.2-2.4 3.6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="ic-meet" viewBox="0 0 24 24">
+    <circle cx="7" cy="7.6" r="2.7" fill="currentColor"/>
+    <circle cx="17" cy="7.6" r="2.7" fill="currentColor"/>
+    <path d="M2 18.5c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6Z" fill="currentColor"/>
+    <path d="M12 18.5c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6Z" fill="currentColor"/>
+  </symbol>
+  <symbol id="ic-others" viewBox="0 0 24 24">
+    <circle cx="5.5" cy="12" r="2.1" fill="currentColor"/>
+    <circle cx="12" cy="12" r="2.1" fill="currentColor"/>
+    <circle cx="18.5" cy="12" r="2.1" fill="currentColor"/>
+  </symbol>
 </defs></svg>
 
 <!-- ===== top bar ===== -->
@@ -152,6 +178,9 @@
     <button class="tab" data-tab="unmarked" role="tab">
       <img src="icons/unmarkedtab.png" alt=""><span>Unmarked</span>
     </button>
+    <button class="tab" data-tab="others" role="tab">
+      <svg class="tIco" width="17" height="17"><use href="#ic-others"/></svg><span>Others</span>
+    </button>
   </div>
 
   <div class="pane" data-pane="warnings">
@@ -164,7 +193,20 @@
         <span class="ico amber"><img src="icons/stopped.png" alt=""></span>
         <span class="lbl">Stopped car</span>
       </button>
+      <button class="opt" data-type="race">
+        <span class="ico red"><svg viewBox="0 0 24 24"><use href="#ic-race"/></svg></span>
+        <span class="lbl">Street race</span>
+      </button>
+      <button class="opt" data-type="closed">
+        <span class="ico amber"><svg viewBox="0 0 24 24"><use href="#ic-closed"/></svg></span>
+        <span class="lbl">Closed road</span>
+      </button>
+      <button class="opt" data-type="drift">
+        <span class="ico purple"><svg viewBox="0 0 24 24"><use href="#ic-drift"/></svg></span>
+        <span class="lbl">Street drift</span>
+      </button>
     </div>
+    <p class="hint">hazard up ahead? pick what you saw — drivers behind you get warned.</p>
   </div>
 
   <div class="pane" data-pane="police" hidden>
@@ -193,6 +235,16 @@
       </button>
     </div>
     <p class="hint">unmarked car spotted — pick the brand so others know what to look for.</p>
+  </div>
+
+  <div class="pane" data-pane="others" hidden>
+    <div class="opts">
+      <button class="opt" data-type="meet">
+        <span class="ico green"><svg viewBox="0 0 24 24"><use href="#ic-meet"/></svg></span>
+        <span class="lbl">Car meet</span>
+      </button>
+    </div>
+    <p class="hint">car meet spotted — everyone cruising by will know where it's at.</p>
   </div>
 
   <button id="send" disabled>SEND REPORT</button>

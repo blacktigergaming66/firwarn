@@ -3,7 +3,8 @@
 A Yanosik-style **live traffic report app** for the BeamNG.drive **East Coast, USA** map (Firwood, Maine).
 
 Drop your crosshair on the map, say what you spotted, and it goes **live for everyone** — other
-visitors see the marker pop up and can hit **Accept ✓** or **Not ✗** to confirm it.
+visitors see it in the feed and can hit **Accept ✓** or **Not ✗**. Reports only pop up on the
+map once more people accept than decline them.
 
 ## Features
 
@@ -11,13 +12,17 @@ visitors see the marker pop up and can hit **Accept ✓** or **Not ✗** to conf
   Reports sync to every open tab within seconds; votes are shared too.
 - **Crosshair positioning** — the pointer only moves when you click the map, never follows the cursor.
   Click → *Confirm position* → report sheet.
-- **Three report tabs**
-  - **Warnings** — car crash, stopped car
+- **Four report tabs**
+  - **Warnings** — car crash, stopped car, street race, closed road, street drift
   - **Police** — police control
   - **Unmarked** — ETK / Gavril / Bruckell / Other (gray brand badges, dark car icon for Other)
+  - **Others** — car meet
+- **Voting decides what the map shows** — the map stays empty until a report has more accepts
+  than declines; a report with ≥75% declines disappears for everyone.
 - **Username gate** — first visit asks for a username; later visits offer your previous names
   in the top-bar menu (and in the gate) for one-tap switching.
-- **Accept / Not voting** — every report shows live ✓/✗ counts, from the feed list or the marker popup.
+- **Accept / Not voting** — every report shows live ✓/✗ counts, from the feed list or the marker
+  popup (double-click a marker to open it without zooming the map).
 - **Map** — drag to pan, wheel / pinch / `+ −` / double-click to zoom (deep zoom), place search.
 - **Feed panel** — the live list of everything currently reported.
 

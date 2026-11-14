@@ -25,6 +25,10 @@ const REPORT_TTL = 24 * 3600 * 1000;
 const TYPES = {
   crash:    { label: 'Car crash',      img: 'icons/crash.png',   bg: '#FDECEA' },
   stopped:  { label: 'Stopped car',    img: 'icons/stopped.png', bg: '#FFF6E5' },
+  race:     { label: 'Street race',    svg: '#ic-race',          bg: '#FFE9E5' },
+  closed:   { label: 'Closed road',    svg: '#ic-closed',        bg: '#FFF1DA' },
+  drift:    { label: 'Street drift',   svg: '#ic-drift',         bg: '#F1EBFF' },
+  meet:     { label: 'Car meet',       svg: '#ic-meet',          bg: '#E7F7EE' },
   police:   { label: 'Police control', img: 'icons/police.png',  bg: '#EAF1FE' },
   unmarked: { label: 'Unmarked',       gray: true }
 };
@@ -78,13 +82,18 @@ function toast(msg) {
 }
 function badgeHTML(r, size) {
   const t = TYPES[r.type] || TYPES.crash;
+  const sizeCss = size ? ';width:' + size + 'px;height:' + size + 'px' : '';
   if (t.gray) {
     const inner = r.brand === 'OTHR'
       ? '<svg viewBox="0 0 48 48"><use href="#ic-darkcar"/></svg>'
       : '<b>' + (r.brand || 'OTHR') + '</b>';
-    return '<span class="mk gray"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '>' + inner + '</span>';
+    return '<span class="mk gray" style="' + sizeCss.replace(/^;/, '') + '">' + inner + '</span>';
   }
-  return '<span class="mk" style="background:' + t.bg + '"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '>' +
+  if (t.svg) {
+    return '<span class="mk" style="background:' + t.bg + sizeCss + '">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="' + t.svg + '"/></svg></span>';
+  }
+  return '<span class="mk" style="background:' + t.bg + sizeCss + '">' +
     '<img src="' + t.img + '" alt=""></span>';
 }
 
@@ -231,6 +240,12 @@ function placeholder() {
 }
 
 /* ---------- live feed (MantleDB) ---------- */
+const BURY_MIN_VOTES = 4;   // downvote-ratio rule only kicks in after this many votes
+function buried(r) {
+  const total = r.yes.length + r.no.length;
+  return total >= BURY_MIN_VOTES && r.no.length / total >= 0.75;   // 75% down → gone
+}
+function onMap(r) { return r.yes.length > r.no.length; }           // more accepts than declines → visible
 function sanitize(list) {
   if (!Array.isArray(list)) return [];
   const now = Date.now();
@@ -267,12 +282,12 @@ async function pull() {
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     const incoming = sanitize(d.reports);
-    // merge: keep newest per id, add anything we haven't seen
+    // merge: server is the source of truth for votes (so un-votes and buries stick)
     const map = new Map(reports.map(x => [x.id, x]));
     for (const inc of incoming) {
       const mine = map.get(inc.id);
       if (!mine) map.set(inc.id, inc);
-      else map.set(inc.id, { ...mine, ...inc, yes: [...new Set([...mine.yes, ...inc.yes])], no: [...new Set([...mine.no, ...inc.no])] });
+      else map.set(inc.id, { ...mine, ...inc, yes: inc.yes, no: inc.no });
     }
     // drop reports the server no longer has (someone pruned them)
     const serverIds = new Set(incoming.map(x => x.id));
@@ -297,12 +312,28 @@ async function push(mutate) {
     const map = new Map(server.map(x => [x.id, x]));
     for (const loc of reports) {
       const s = map.get(loc.id);
+      if (s && buried(s)) continue;            // already dead server-side — don't resurrect
       if (!s) map.set(loc.id, loc);
-      else map.set(loc.id, { ...s, ...loc, yes: [...new Set([...s.yes, ...loc.yes])], no: [...new Set([...s.no, ...loc.no])] });
+      else {
+        // union so concurrent votes aren't lost, then apply *our* user's own choice
+        const merged = {
+          ...s, ...loc,
+          yes: [...new Set([...s.yes, ...loc.yes])],
+          no: [...new Set([...s.no, ...loc.no])]
+        };
+        if (username) {
+          const hasYes = loc.yes.includes(username), hasNo = loc.no.includes(username);
+          merged.yes = merged.yes.filter(n => n !== username);
+          merged.no = merged.no.filter(n => n !== username);
+          if (hasYes) merged.yes.push(username);
+          if (hasNo) merged.no.push(username);
+        }
+        map.set(loc.id, merged);
+      }
     }
     let next = [...map.values()];
     next = mutate(next) || next;
-    next = sanitize(next).sort((a, b) => b.t - a.t).slice(0, 60);
+    next = sanitize(next).filter(r => !buried(r)).sort((a, b) => b.t - a.t).slice(0, 60);
     const w = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -341,26 +372,37 @@ function markerHTML(r) {
     'role="button" aria-label="' + title(r) + '">' + badge + cnt +
     '<span class="ttl">' + title(r) + ' · ' + age(r.t) + '</span></div>';
 }
-function render() { if (WORLD.w) markersEl.innerHTML = reports.map(markerHTML).join(''); }
-function updateFoot() {
-  const near = cross ? reports.filter(r => Math.hypot(r.fx - cross.x / WORLD.w, r.fy - cross.y / WORLD.h) < 0.12).length : 0;
-  $('#footL').textContent = 'Firwood, Maine · ' + reports.length + ' live report' + (reports.length === 1 ? '' : 's') +
-    (near ? ' · ' + near + ' near your crosshair' : '');
-  $('#feedN').textContent = reports.length;
+function render() {
+  if (!WORLD.w) return;
+  // map stays empty until a report has more accepts than declines
+  markersEl.innerHTML = reports.filter(r => !buried(r) && onMap(r)).map(markerHTML).join('');
 }
+function updateFoot() {
+  const visible = reports.filter(r => !buried(r));
+  const shown = visible.filter(onMap).length;
+  const near = (cross && WORLD.w) ? visible.filter(onMap).filter(r => Math.hypot(r.fx - cross.x / WORLD.w, r.fy - cross.y / WORLD.h) < 0.12).length : 0;
+  $('#footL').textContent = 'Firwood, Maine · ' + shown + ' confirmed' +
+    (visible.length > shown ? ' (' + (visible.length - shown) + ' pending)' : '') +
+    (near ? ' · ' + near + ' near your crosshair' : '');
+  $('#feedN').textContent = visible.length;
+}
+/* if a report we have open gets voted off the map, close its popup */
 
 /* ---------- feed panel ---------- */
 function renderFeed() {
   const list = $('#feedList');
-  if (!reports.length) {
+  const shown = reports.filter(r => !buried(r));   // buried = gone from the list too
+  if (!shown.length) {
     list.innerHTML = '<div class="fEmpty">nothing reported yet.<br>be the first — hit the red button.</div>';
     return;
   }
-  list.innerHTML = reports.map(r => {
+  list.innerHTML = shown.map(r => {
     const yesOn = username && r.yes.includes(username);
     const noOn = username && r.no.includes(username);
-    return '<div class="fItem" data-id="' + r.id + '">' + badgeHTML(r, 32) +
-      '<div class="fMeta"><b>' + title(r) + '</b><small>' + r.by + ' · ' + age(r.t) + '</small></div>' +
+    const pending = !onMap(r);   // not on the map until accepts > declines
+    return '<div class="fItem' + (pending ? ' pend' : '') + '" data-id="' + r.id + '">' + badgeHTML(r, 32) +
+      '<div class="fMeta"><b>' + title(r) + (pending ? ' <i class="pChip">pending</i>' : '') + '</b>' +
+      '<small>' + r.by + ' · ' + age(r.t) + (pending ? ' · needs your ✓ to show on map' : '') + '</small></div>' +
       '<div class="fVotes">' +
       '<button class="vBtn yes' + (yesOn ? ' on' : '') + '" data-v="yes" title="accept"><svg><use href="#ic-check"/></svg>' + r.yes.length + '</button>' +
       '<button class="vBtn no' + (noOn ? ' on' : '') + '" data-v="no" title="not there"><svg><use href="#ic-no"/></svg>' + r.no.length + '</button>' +
@@ -386,14 +428,14 @@ async function vote(id, side) {
   r[side] = had ? r[side].filter(n => n !== username) : [...r[side], username];
   r[other] = r[other].filter(n => n !== username);
   render(); renderFeed();
-  if (popupId === id) openPopup(id);
+  if (popupId === id) { if (onMap(r) && !buried(r)) openPopup(id); else closePopup(); }
   const ok = await push(() => {});
   if (ok && !had) toast(side === 'yes' ? 'accepted — ' + r.by + ' sees your check' : 'marked as not there');
 }
 
 /* ---------- popup ---------- */
 function openPopup(id) {
-  const r = reports.find(x => x.id === id); if (!r) return;
+  const r = reports.find(x => x.id === id); if (!r || buried(r)) { closePopup(); return; }
   popupId = id; popupWorld = { x: r.fx * WORLD.w, y: r.fy * WORLD.h };
   const yesOn = username && r.yes.includes(username);
   const noOn = username && r.no.includes(username);

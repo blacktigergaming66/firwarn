@@ -111,6 +111,7 @@ body.pinning #mapWrap{cursor:crosshair}
   border:2.5px solid #fff;box-shadow:0 4px 10px #0005;overflow:hidden;background:#fff;
 }
 .mk img{width:24px;height:24px;object-fit:contain;display:block}
+.mk svg{width:23px;height:23px;color:#1A1D22;display:block}
 .mk.gray{background:#DFE2E6}
 .mk.gray b{font-size:9.5px;font-weight:800;color:#4A5058;letter-spacing:-.2px}
 .mk.gray svg{width:26px;height:26px}
@@ -235,6 +236,11 @@ body.confirming #fab,body.sheetopen #fab{opacity:0;pointer-events:none;transform
 .vBtn:hover{background:#F6F7F9}
 .vBtn.yes.on{background:#EDFBF1;border-color:#A9E9C1;color:#177A3B}
 .vBtn.no.on{background:#FFF1F0;border-color:#FFC9C3;color:#B4301F}
+.fItem.pend{background:#FFFBF2}
+.pChip{
+  font-style:normal;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;
+  background:#FFF1DA;color:#9A6B12;border-radius:5px;padding:1.5px 5px;vertical-align:1px;
+}
 .fEmpty{padding:22px 14px;text-align:center;color:var(--sub);font-size:13px}
 
 /* ---------- sheet ---------- */
@@ -277,6 +283,10 @@ body.confirming #fab,body.sheetopen #fab{opacity:0;pointer-events:none;transform
   width:48px;height:48px;border-radius:13px;background:#F1F3F5;display:grid;place-items:center;overflow:hidden;
 }
 .opt .ico img{width:34px;height:34px;object-fit:contain}
+.opt .ico svg{width:31px;height:31px;color:#1A1D22}
+.opt .ico.red{background:#FFE9E5}
+.opt .ico.purple{background:#F1EBFF}
+.opt .ico.green{background:#E7F7EE}
 .opt .ico.amber{background:#FFF6E5}
 .opt .ico.blue{background:#EAF1FE}
 .opt .ico.gray{background:#E3E6EA}
