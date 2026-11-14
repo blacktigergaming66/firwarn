@@ -23,12 +23,12 @@ const POLL_SLOW = 30000;   // idle
 const REPORT_TTL = 24 * 3600 * 1000;
 
 const TYPES = {
-  crash:    { label: 'Car crash',      img: 'icons/crash.png',   bg: '#FDECEA' },
+  crash:    { label: 'Car crash',      img: 'icons/crash.png',   bg: '#FFE9E5' },
   stopped:  { label: 'Stopped car',    img: 'icons/stopped.png', bg: '#FFF6E5' },
-  race:     { label: 'Street race',    svg: '#ic-race',          bg: '#FFE9E5' },
-  closed:   { label: 'Closed road',    svg: '#ic-closed',        bg: '#FFF1DA' },
-  drift:    { label: 'Street drift',   svg: '#ic-drift',         bg: '#F1EBFF' },
-  meet:     { label: 'Car meet',       svg: '#ic-meet',          bg: '#E7F7EE' },
+  race:     { label: 'Street race',    svg: '#ic-race',          bg: '#EDEFF2', glyph: '#23262B' },
+  closed:   { label: 'Closed road',    svg: '#ic-closed',        bg: '#FFEDD5', glyph: '#C2410C' },
+  drift:    { label: 'Street drift',   svg: '#ic-drift',         bg: '#F1EBFF', glyph: '#6D3BE4' },
+  meet:     { label: 'Car meet',       svg: '#ic-meet',          bg: '#E7F7EE', glyph: '#15803D' },
   police:   { label: 'Police control', img: 'icons/police.png',  bg: '#EAF1FE' },
   unmarked: { label: 'Unmarked',       gray: true }
 };
@@ -90,7 +90,7 @@ function badgeHTML(r, size) {
     return '<span class="mk gray" style="' + sizeCss.replace(/^;/, '') + '">' + inner + '</span>';
   }
   if (t.svg) {
-    return '<span class="mk" style="background:' + t.bg + sizeCss + '">' +
+    return '<span class="mk" style="background:' + t.bg + ';color:' + (t.glyph || '#1A1D22') + sizeCss + '">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="' + t.svg + '"/></svg></span>';
   }
   return '<span class="mk" style="background:' + t.bg + sizeCss + '">' +

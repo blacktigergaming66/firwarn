@@ -111,7 +111,7 @@ body.pinning #mapWrap{cursor:crosshair}
   border:2.5px solid #fff;box-shadow:0 4px 10px #0005;overflow:hidden;background:#fff;
 }
 .mk img{width:24px;height:24px;object-fit:contain;display:block}
-.mk svg{width:23px;height:23px;color:#1A1D22;display:block}
+.mk svg{width:23px;height:23px;display:block}
 .mk.gray{background:#DFE2E6}
 .mk.gray b{font-size:9.5px;font-weight:800;color:#4A5058;letter-spacing:-.2px}
 .mk.gray svg{width:26px;height:26px}
@@ -282,13 +282,22 @@ body.confirming #fab,body.sheetopen #fab{opacity:0;pointer-events:none;transform
 .opt .ico{
   width:48px;height:48px;border-radius:13px;background:#F1F3F5;display:grid;place-items:center;overflow:hidden;
 }
-.opt .ico img{width:34px;height:34px;object-fit:contain}
-.opt .ico svg{width:31px;height:31px;color:#1A1D22}
+.opt .ico img{width:31px;height:31px;object-fit:contain}
+.opt .ico svg{width:31px;height:31px}
 .opt .ico.red{background:#FFE9E5}
+.opt .ico.red svg{color:#C93525}
+.opt .ico.charcoal{background:#EDEFF2}
+.opt .ico.charcoal svg{color:#23262B}
+.opt .ico.orange{background:#FFEDD5}
+.opt .ico.orange svg{color:#C2410C}
 .opt .ico.purple{background:#F1EBFF}
+.opt .ico.purple svg{color:#6D3BE4}
 .opt .ico.green{background:#E7F7EE}
+.opt .ico.green svg{color:#15803D}
 .opt .ico.amber{background:#FFF6E5}
+.opt .ico.amber svg{color:#B45309}
 .opt .ico.blue{background:#EAF1FE}
+.opt .ico.blue svg{color:#2F6FED}
 .opt .ico.gray{background:#E3E6EA}
 .opt .ico.gray b{font-size:12.5px;font-weight:900;color:#4A5058;letter-spacing:-.3px}
 .opt .ico.gray svg{width:34px;height:34px}
