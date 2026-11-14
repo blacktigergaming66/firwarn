@@ -305,6 +305,28 @@ body.confirming #fab,body.sheetopen #fab{opacity:0;pointer-events:none;transform
 .opt.brand .ico{width:100%;height:44px;border-radius:11px}
 .hint{margin:11px 2px 2px;font-size:12px;color:var(--sub);text-align:center;line-height:1.5}
 
+/* car for sale submenu (gray cards, white text — matches unmarked badge style) */
+.csMenu{
+  position:absolute;inset:0;background:#fff;border-radius:13px;padding:14px;box-shadow:0 4px 12px #00000017;
+  display:flex;flex-direction:column;gap:12px;z-index:5;animation:slideUp .25s ease;
+}
+.csHead{display:flex;align-items:center;gap:10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.csHead b{font-size:14px;font-weight:800}
+.csHead button{width:30px;height:30px;border-radius:8px;border:none;background:#F3F5F7;font-size:17px}
+.csForm{display:flex;flex-direction:column;gap:10px}
+.csForm label{font-size:11px;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:.6px}
+.csForm input{
+  width:100%;height:40px;border:2px solid var(--line);border-radius:11px;background:#F7F8FA;
+  padding:0 14px;font-size:15px;font-weight:700;outline:none;color:var(--ink);
+}
+.csForm input:focus{border-color:#2F6FED;background:#fff}
+.csPrice{display:flex;align-items:center;gap:8px}
+.csPrice span{font-size:16px;font-weight:900;color:var(--sub);flex:none}
+#csPost{width:100%;height:44px;margin-top:4px;border:none;border-radius:11px;background:#C7CBD1;color:#fff;font-size:14px;font-weight:900}
+#csPost:not(:disabled){background:var(--red);box-shadow:0 6px 16px #e8412f4d}
+#csPost:not(:disabled):hover{background:var(--red2)}
+@keyframes slideUp{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+
 #send{
   width:100%;margin-top:14px;padding:14px;border:none;border-radius:13px;
   background:#C7CBD1;color:#fff;font-size:15px;font-weight:900;letter-spacing:.6px;

@@ -75,6 +75,9 @@
     <path d="M2 18.5c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6Z" fill="currentColor"/>
     <path d="M12 18.5c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6Z" fill="currentColor"/>
   </symbol>
+  <symbol id="ic-dollar" viewBox="0 0 24 24">
+    <path d="M12 3v18M17 5H7M17 19H7M7 11h10M7 13h10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
   <symbol id="ic-others" viewBox="0 0 24 24">
     <circle cx="5.5" cy="12" r="2.1" fill="currentColor"/>
     <circle cx="12" cy="12" r="2.1" fill="currentColor"/>
@@ -243,8 +246,26 @@
         <span class="ico green"><svg viewBox="0 0 24 24"><use href="#ic-meet"/></svg></span>
         <span class="lbl">Car meet</span>
       </button>
+      <button class="opt" data-type="carsale" id="carsaleBtn">
+        <span class="ico charcoal"><svg viewBox="0 0 24 24"><use href="#ic-dollar"/></svg></span>
+        <span class="lbl">Car for sale</span>
+      </button>
     </div>
     <p class="hint">car meet spotted — everyone cruising by will know where it's at.</p>
+
+    <!-- car for sale submenu (pops up when you tap it) -->
+    <div id="csMenu" hidden class="csMenu">
+      <div class="csHead">
+        <b>selling a car?</b>
+        <button id="csBack">←</button>
+      </div>
+      <div class="csForm">
+        <label>brand</label>
+        <input id="csBrand" type="text" placeholder="e.g. Gavril, ETK" maxlength="20">
+        <div class="csPrice"><span>$</span><input id="csPrice" type="text" placeholder="price" maxlength="10"></div>
+        <button id="csPost" disabled>post listing</button>
+      </div>
+    </div>
   </div>
 
   <button id="send" disabled>SEND REPORT</button>

@@ -29,6 +29,7 @@ const TYPES = {
   closed:   { label: 'Closed road',    svg: '#ic-closed',        bg: '#FFEDD5', glyph: '#C2410C' },
   drift:    { label: 'Street drift',   svg: '#ic-drift',         bg: '#F1EBFF', glyph: '#6D3BE4' },
   meet:     { label: 'Car meet',       svg: '#ic-meet',          bg: '#E7F7EE', glyph: '#15803D' },
+  carsale:  { label: 'Car for sale',   svg: '#ic-dollar',        bg: '#FFF9D9', glyph: '#B45309' },
   police:   { label: 'Police control', img: 'icons/police.png',  bg: '#EAF1FE' },
   unmarked: { label: 'Unmarked',       gray: true }
 };
@@ -48,6 +49,7 @@ let mode = 'idle';              // idle | pinning | confirming | reporting
 let cross = null;               // {x,y} world px — moves ONLY on map click
 let sel = null;                 // {type, brand?}
 let tab = 'warnings';
+let csBrand = '', csPrice = '';   // car-for-sale submenu form
 let reports = [];               // shared live reports
 let username = null;
 let popupId = null, popupWorld = null, tween = null;
@@ -90,6 +92,10 @@ function badgeHTML(r, size) {
     return '<span class="mk gray" style="' + sizeCss.replace(/^;/, '') + '">' + inner + '</span>';
   }
   if (t.svg) {
+    if (r.type === 'carsale') {
+      return '<span class="mk" style="background:' + t.bg + ';color:' + (t.glyph || '#1A1D22') + sizeCss + '">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-dollar"/></svg></span>';
+    }
     return '<span class="mk" style="background:' + t.bg + ';color:' + (t.glyph || '#1A1D22') + sizeCss + '">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="' + t.svg + '"/></svg></span>';
   }
@@ -242,10 +248,14 @@ function placeholder() {
 /* ---------- live feed (MantleDB) ---------- */
 const BURY_MIN_VOTES = 4;   // downvote-ratio rule only kicks in after this many votes
 function buried(r) {
+  if (r.type === 'carsale') return false;   // listings don't get buried
   const total = r.yes.length + r.no.length;
   return total >= BURY_MIN_VOTES && r.no.length / total >= 0.75;   // 75% down → gone
 }
-function onMap(r) { return r.yes.length > r.no.length; }           // more accepts than declines → visible
+function onMap(r) {
+  if (r.type === 'carsale') return true;    // listings show immediately
+  return r.yes.length > r.no.length;        // more accepts than declines → visible
+}
 function sanitize(list) {
   if (!Array.isArray(list)) return [];
   const now = Date.now();
@@ -254,6 +264,7 @@ function sanitize(list) {
       id: String(r.id).slice(0, 20),
       fx: clamp(+r.fx || 0, 0, 1), fy: clamp(+r.fy || 0, 0, 1),
       type: r.type, brand: r.brand ? String(r.brand).slice(0, 8) : undefined,
+      price: r.price ? String(r.price).slice(0, 10) : undefined,
       by: String(r.by || '?').slice(0, 16),
       t: +r.t || now,
       yes: Array.isArray(r.yes) ? [...new Set(r.yes.map(String))].slice(0, 200) : [],
@@ -400,8 +411,11 @@ function renderFeed() {
     const yesOn = username && r.yes.includes(username);
     const noOn = username && r.no.includes(username);
     const pending = !onMap(r);   // not on the map until accepts > declines
+    const saleLine = r.type === 'carsale'
+      ? ' <small style="color:#B45309;font-weight:800;">$' + (r.price || '') + ' · ' + (r.brand || 'car') + '</small>'
+      : '';
     return '<div class="fItem' + (pending ? ' pend' : '') + '" data-id="' + r.id + '">' + badgeHTML(r, 32) +
-      '<div class="fMeta"><b>' + title(r) + (pending ? ' <i class="pChip">pending</i>' : '') + '</b>' +
+      '<div class="fMeta"><b>' + title(r) + (pending ? ' <i class="pChip">pending</i>' : '') + saleLine + '</b>' +
       '<small>' + r.by + ' · ' + age(r.t) + (pending ? ' · needs your ✓ to show on map' : '') + '</small></div>' +
       '<div class="fVotes">' +
       '<button class="vBtn yes' + (yesOn ? ' on' : '') + '" data-v="yes" title="accept"><svg><use href="#ic-check"/></svg>' + r.yes.length + '</button>' +
@@ -551,6 +565,50 @@ sendBtn.onclick = async () => {
   sel = null;
   $$('.opt.sel').forEach(x => x.classList.remove('sel'));
   sendBtn.disabled = true;
+};
+
+/* ---------- car for sale submenu ---------- */
+$('#carsaleBtn').onclick = () => {
+  $$('.opt').forEach(x => x.classList.remove('sel'));
+  $('#carsaleBtn').classList.add('sel');
+  document.querySelector('.pane[data-pane="others"] .opts').hidden = true;
+  $('#csMenu').hidden = false;
+  csBrand = ''; csPrice = '';
+  $('#csBrand').value = ''; $('#csPrice').value = '';
+  $('#csPost').disabled = true;
+};
+$('#csBack').onclick = () => {
+  $('#csMenu').hidden = true;
+  document.querySelector('.pane[data-pane="others"] .opts').hidden = false;
+  $$('.opt.sel').forEach(x => x.classList.remove('sel'));
+  sendBtn.disabled = true;
+};
+$('#csBrand').addEventListener('input', () => {
+  csBrand = $('#csBrand').value.trim();
+  $('#csPost').disabled = !(csBrand && csPrice);
+});
+$('#csPrice').addEventListener('input', () => {
+  csPrice = $('#csPrice').value.replace(/[^0-9]/g, '');
+  $('#csPost').disabled = !(csBrand && csPrice);
+});
+$('#csPost').onclick = async () => {
+  if (!csBrand || !csPrice || !cross || !username) return;
+  $('#csPost').disabled = true;
+  const r = {
+    id: uid(),
+    fx: cross.x / WORLD.w, fy: cross.y / WORLD.h,
+    type: 'carsale', brand: csBrand.slice(0, 8), price: csPrice.slice(0, 10),
+    by: username, t: Date.now(),
+    yes: [], no: []
+  };
+  reports = [r, ...reports];
+  const ok = await push(() => {});
+  closeSheet(); toIdle();
+  toast(ok ? 'listing posted — $' + csPrice + ' ' + csBrand : 'listing queued for when you\'re back online');
+  csBrand = ''; csPrice = '';
+  $('#csBrand').value = ''; $('#csPrice').value = '';
+  $('#csPost').disabled = true;
+  $$('.opt.sel').forEach(x => x.classList.remove('sel'));
 };
 function closeSheet() { sheet.classList.remove('open'); }
 $('#sClose').onclick = () => { closeSheet(); toIdle(); };
